@@ -11,17 +11,13 @@ namespace System.Configuration
     ///     The AppSettingsReader class provides a wrapper for System.Configuration.ConfigurationManager.AppSettings
     ///     which provides a single method for reading values from the config file of a particular type.
     /// </summary>
-    public class AppSettingsReader
+   public class AppSettingsReader
     {
         private NameValueCollection _map;
         private static Type s_stringType = typeof(string);
         private static Type[] _paramsArray = new Type[] { s_stringType };
-        private static string NullString = "None";
 
-        public AppSettingsReader()
-        {
-            _map = System.Configuration.ConfigurationManager.AppSettings;
-        }
+        public AppSettingsReader() => _map = ConfigurationManager.AppSettings;
 
         /// <summary>
         /// Gets the value for specified key from ConfigurationManager.AppSettings, and returns
@@ -34,65 +30,32 @@ namespace System.Configuration
         {
             if (key == null) throw new ArgumentNullException(nameof(key));
             if (type == null) throw new ArgumentNullException(nameof(type));
+            if (_map[key] == null) throw new InvalidOperationException(string.Format(SR.AppSettingsReaderNoKey, key));
 
-            string val = _map[key];
-
-            if (val == null) throw new InvalidOperationException(string.Format(SR.AppSettingsReaderNoKey, key));
-
+            string val = _map[key];           
             if (type == s_stringType)
             {
-                // It's a string, so we can ALMOST just return the value.  The only
-                // tricky point is that if it's the string "(None)", then we want to
-                // return null.  And of course we need a way to represent the string
-                // (None), so we use ((None)), and so on... so it's a little complicated.
                 int NoneNesting = GetNoneNesting(val);
-                if (NoneNesting == 0)
-                {
-                    // val is not of the form ((..((None))..))
-                    return val;
-                }
-                else if (NoneNesting == 1)
-                {
-                    // val is (None)
-                    return null;
-                }
-                else
-                {
-                    // val is of the form ((..((None))..))
-                    return val.Substring(1, val.Length - 2);
-                }
+                return NoneNesting == 0 ? val : NoneNesting == 1 ? null : val.Substring(1, val.Length - 2);
             }
-            else
+
+            try
             {
-                try
-                {
-                    return Convert.ChangeType(val, type, CultureInfo.InvariantCulture);
-                }
-                catch (Exception)
-                {
-                    string displayString = (val.Length == 0) ? SR.AppSettingsReaderEmptyString : val;
-                    throw new InvalidOperationException(string.Format(SR.AppSettingsReaderCantParse, displayString, key, type.ToString()));
-                }
+                return Convert.ChangeType(val, type, CultureInfo.InvariantCulture);
+            }
+            catch (Exception)
+            {
+                throw new InvalidOperationException(string.Format(SR.AppSettingsReaderCantParse, (val.Length == 0) ? SR.AppSettingsReaderEmptyString : val, key, type.ToString()));
             }
         }
 
         private int GetNoneNesting(string val)
         {
-            int count = 0;
+            if (string.IsNullOrWhiteSpace(val)) return 0;
             int len = val.Length;
-            if (len > 1)
-            {
-                while (val[count] == '(' && val[len - count - 1] == ')')
-                {
-                    count++;
-                }
-                if (count > 0 && string.Compare(NullString, 0, val, count, len - 2 * count, StringComparison.Ordinal) != 0)
-                {
-                    // the stuff between the parens is not "None"
-                    count = 0;
-                }
-            }
-            return count;
+            int count = 0;
+            while (val[count] == '(' && val[len - count - 1] == ')') count++;
+            return (count > 0 && string.Compare("None", 0, val, count, len - 2 * count, StringComparison.Ordinal) != 0) ? 0 : count;
         }
     }
 }
